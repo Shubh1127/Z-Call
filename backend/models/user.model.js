@@ -12,6 +12,13 @@ const userSchema=new Schema({
     isVerified:{
         type:Boolean,
         default:false
+    },
+    password:{
+        type:String,
+        required:true
+    },
+    token:{
+        
     }
 })
 
