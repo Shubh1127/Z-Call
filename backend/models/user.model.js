@@ -18,7 +18,8 @@ const userSchema=new Schema({
         required:true
     },
     token:{
-        
+        type:String,
+        required:true
     }
 })
 
