@@ -1,20 +1,20 @@
-import { Schema } from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
-const meetingSchema=new Schema({
-    user_id:{
-        type:String
+const meetingSchema = new Schema({
+    user_id: {
+        type: String
     },
-    meetingCode:{
-        type:String,
-        required:false
+    meetingCode: {
+        type: String,
+        required: false
     },
-    date:{
-        type:Date,
-        default:Date.now,
-        required:true
+    date: {
+        type: Date,
+        default: Date.now,
+        required: true
     }
-})
+});
 
-const Meeting=mongoose.model("Meeting",meetingSchema);
+const Meeting = mongoose.model("Meeting", meetingSchema);
 
 export default Meeting;
