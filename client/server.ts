@@ -1,0 +1,51 @@
+import { createServer } from 'http'
+import { parse } from 'url'
+import next from 'next'
+import { Server as SocketIOServer } from 'socket.io'
+import { initMediasoupWorkers } from './lib/mediasoup/worker'
+import { registerSocketHandlers } from './lib/socket/handlers'
+import { connectDB } from './lib/db/connect'
+
+const dev = process.env.NODE_ENV !== 'production'
+const app = next({ dev })
+const handle = app.getRequestHandler()
+
+app.prepare().then(async () => {
+  try {
+    // 1. Connect to MongoDB
+    await connectDB()
+    console.log('✅ MongoDB connected')
+
+    // 2. Initialize mediasoup workers
+    await initMediasoupWorkers()
+    console.log('✅ Mediasoup workers initialized')
+
+    // 3. Create HTTP server
+    const httpServer = createServer((req, res) => {
+      const parsedUrl = parse(req.url!, true)
+      handle(req, res, parsedUrl)
+    })
+
+    // 4. Attach Socket.IO
+    const io = new SocketIOServer(httpServer, {
+      cors: {
+        origin: process.env.NEXT_PUBLIC_APP_URL || '*',
+        methods: ['GET', 'POST'],
+        credentials: true,
+      },
+      transports: ['websocket', 'polling'],
+    })
+
+    // 5. Register all socket event handlers
+    registerSocketHandlers(io)
+    console.log('✅ Socket.IO handlers registered')
+
+    const PORT = parseInt(process.env.PORT || '3000', 10)
+    httpServer.listen(PORT, () => {
+      console.log(`🚀 Server running at http://localhost:${PORT}`)
+    })
+  } catch (err) {
+    console.error('❌ Server startup failed:', err)
+    process.exit(1)
+  }
+})
