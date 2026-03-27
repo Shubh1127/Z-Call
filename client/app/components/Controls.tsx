@@ -5,30 +5,28 @@ import { useCallStore } from '@/lib/client/store/useCallStore'
 interface ControlsProps {
   onEndCall?: () => void
   onScreenShare?: () => void
+  onToggleMic?: () => void
+  onToggleCamera?: () => void
 }
 
-export function Controls({ onEndCall, onScreenShare }: ControlsProps) {
+export function Controls({ onEndCall, onScreenShare, onToggleMic, onToggleCamera }: ControlsProps) {
   const {
     isMicOn,
     isCameraOn,
     isScreenSharing,
     isChatOpen,
-    setMicOn,
-    setCameraOn,
-    setScreenSharing,
     setChatOpen,
   } = useCallStore()
 
   const handleToggleMic = () => {
-    setMicOn(!isMicOn)
+    onToggleMic?.()
   }
 
   const handleToggleCamera = () => {
-    setCameraOn(!isCameraOn)
+    onToggleCamera?.()
   }
 
   const handleToggleScreenShare = () => {
-    setScreenSharing(!isScreenSharing)
     onScreenShare?.()
   }
 

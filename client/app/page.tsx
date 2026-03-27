@@ -27,6 +27,17 @@ export default function Home() {
       const newRoomId = generateRoomId()
       const peerId = uuidv4()
 
+      // Create room in database
+      const response = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: newRoomId, name: `${myName}'s Room` }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to create room')
+      }
+
       // Set identity in store
       setIdentity(newRoomId, peerId, myName)
 
@@ -54,6 +65,12 @@ export default function Home() {
     try {
       const peerId = uuidv4()
 
+      // Verify room exists
+      const response = await fetch(`/api/rooms?roomId=${roomId}`)
+      if (!response.ok) {
+        throw new Error('Room not found')
+      }
+
       // Set identity in store
       setIdentity(roomId, peerId, myName)
 
@@ -61,7 +78,7 @@ export default function Home() {
       router.push(`/room/${roomId}`)
     } catch (err) {
       console.error('Failed to join room:', err)
-      alert('Failed to join room')
+      alert('Room not found. Please check the room ID.')
       setIsLoading(false)
     }
   }

@@ -2,9 +2,9 @@ import { createServer } from 'http'
 import { parse } from 'url'
 import next from 'next'
 import { Server as SocketIOServer } from 'socket.io'
-import { initMediasoupWorkers } from './lib/mediasoup/worker'
-import { registerSocketHandlers } from './lib/socket/handlers'
-import { connectDB } from './lib/db/connect'
+import { initMediasoupWorkers } from './lib/mediasoup/worker.js'
+import { registerSocketHandlers } from './lib/socket/handlers.js'
+import { connectDB } from './lib/db/connect.js'
 
 const dev = process.env.NODE_ENV !== 'production'
 const app = next({ dev })

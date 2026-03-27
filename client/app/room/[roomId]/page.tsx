@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallStore } from '@/lib/client/store/useCallStore'
+import { useMediasoup } from '@/lib/client/useMediasoup'
+import { useChat } from '@/lib/client/useChat'
 import { VideoGrid } from '@/app/components/VideoGrid'
 import { Controls } from '@/app/components/Controls'
 import { ChatPanel } from '@/app/components/ChatPanel'
@@ -11,70 +13,77 @@ export default function RoomPage() {
   const params = useParams()
   const router = useRouter()
   const roomId = params.roomId as string
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
 
   const {
     isConnected,
     isJoining,
     joinError,
     myName,
+    peerId,
     isScreenSharing,
     localScreenStream,
     isChatOpen,
-    reset,
   } = useCallStore()
 
-  // Initialize on mount
+  const {
+    joinRoom,
+    leaveRoom,
+    toggleMic,
+    toggleCamera,
+    startScreenShare,
+    stopScreenShare,
+  } = useMediasoup()
+
+  const { sendMessage } = useChat()
+
+  // Join room on mount
   useEffect(() => {
-    if (!roomId) {
-      setError('Invalid room ID')
-      return
+    if (!roomId || !peerId || !myName || isInitialized) return
+
+    console.log('Initializing room...')
+    joinRoom()
+    setIsInitialized(true)
+  }, [roomId, peerId, myName, isInitialized, joinRoom])
+
+  // Handle screen share toggle
+  const handleScreenShare = () => {
+    if (isScreenSharing) {
+      stopScreenShare()
+    } else {
+      startScreenShare()
     }
+  }
 
-    // TODO: Initialize connection to room
-    // For now, just mark as loaded
-    setIsLoading(false)
-  }, [roomId])
-
-  // Handle errors
-  useEffect(() => {
-    if (joinError) {
-      setError(joinError)
-    }
-  }, [joinError])
-
+  // Handle end call
   const handleEndCall = () => {
-    reset()
+    leaveRoom()
     router.push('/')
   }
 
-  const handleScreenShare = () => {
-    // TODO: Implement screen share logic
-    console.log('Screen share toggled')
-  }
-
+  // Handle send message
   const handleSendMessage = (message: string) => {
-    // TODO: Emit message via socket
-    console.log('Send message:', message)
+    sendMessage(message)
   }
 
-  if (isLoading) {
+  // Show loading state
+  if (isJoining || !isInitialized) {
     return (
       <div className="flex items-center justify-center w-full h-screen bg-black">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4" />
-          <p className="text-white">Loading room...</p>
+          <p className="text-white">Joining room...</p>
         </div>
       </div>
     )
   }
 
-  if (error) {
+  // Show error state
+  if (joinError) {
     return (
       <div className="flex items-center justify-center w-full h-screen bg-black">
         <div className="text-center">
-          <p className="text-red-400 mb-4">{error}</p>
+          <p className="text-red-400 mb-4">{joinError}</p>
           <button
             onClick={() => router.push('/')}
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg"
@@ -93,7 +102,7 @@ export default function RoomPage() {
         <div>
           <h1 className="text-white text-2xl font-bold">Room: {roomId}</h1>
           <p className="text-gray-400 text-sm">
-            {isConnected ? '🟢 Connected' : isJoining ? '🟡 Joining...' : '🔴 Disconnected'}
+            {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
           </p>
         </div>
         <div className="text-white text-sm">
@@ -125,6 +134,8 @@ export default function RoomPage() {
         <Controls
           onEndCall={handleEndCall}
           onScreenShare={handleScreenShare}
+          onToggleMic={toggleMic}
+          onToggleCamera={toggleCamera}
         />
       </div>
     </div>
