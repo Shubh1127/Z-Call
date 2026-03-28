@@ -8,6 +8,7 @@ import { createServer } from 'http'
 import { parse } from 'url'
 import next from 'next'
 import { Server as SocketIOServer } from 'socket.io'
+import { getToken } from 'next-auth/jwt'
 import { initMediasoupWorkers } from './lib/mediasoup/worker.js'
 import { registerSocketHandlers } from './lib/socket/handlers.js'
 import { connectDB } from './lib/db/connect.js'
@@ -40,6 +41,33 @@ app.prepare().then(async () => {
         credentials: true,
       },
       transports: ['websocket', 'polling'],
+    })
+
+    io.use(async (socket, nextAuth) => {
+      try {
+        const reqLike = {
+          headers: {
+            cookie: socket.handshake.headers.cookie || '',
+          },
+        } as Parameters<typeof getToken>[0]['req']
+
+        const token = await getToken({
+          req: reqLike,
+          secret: process.env.NEXTAUTH_SECRET,
+        })
+
+        if (!token?.email) {
+          return nextAuth(new Error('Unauthorized socket connection'))
+        }
+
+        socket.data.user = {
+          email: token.email,
+          name: token.name || 'User',
+        }
+        return nextAuth()
+      } catch (err) {
+        return nextAuth(err as Error)
+      }
     })
 
     // 5. Register all socket event handlers

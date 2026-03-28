@@ -90,6 +90,8 @@ export function registerSocketHandlers(io: Server) {
         callback?: AckCallback
       ) => {
         try {
+          const authenticatedName = (socket.data.user?.name as string | undefined) || name || 'User'
+
           await connectDB()
 
           // Ensure room exists in DB
@@ -99,12 +101,12 @@ export function registerSocketHandlers(io: Server) {
           // Upsert peer in DB
           await Peer.findOneAndUpdate(
             { roomId, peerId },
-            { name, socketId: socket.id, joinedAt: new Date() },
+            { name: authenticatedName, socketId: socket.id, joinedAt: new Date() },
             { upsert: true, new: true }
           )
 
           // Add to in-memory state
-          addPeer(roomId, peerId, name, socket.id)
+          addPeer(roomId, peerId, authenticatedName, socket.id)
           socket.join(roomId)
 
           // Get mediasoup router RTP capabilities for this room
@@ -124,9 +126,9 @@ export function registerSocketHandlers(io: Server) {
             .then((msgs) => msgs.reverse())
 
           // Notify others that a new peer joined
-          socket.to(roomId).emit('peer-joined', { peerId, name })
+          socket.to(roomId).emit('peer-joined', { peerId, name: authenticatedName })
 
-          console.log(`👤 ${name} (${peerId}) joined room ${roomId}`)
+          console.log(`👤 ${authenticatedName} (${peerId}) joined room ${roomId}`)
 
           ack(callback, {
             rtpCapabilities: router.rtpCapabilities,

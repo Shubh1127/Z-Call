@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { connectDB } from '@/lib/db/connect'
 import { Room } from '@/lib/models/Room'
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { roomId, name } = body
 
@@ -35,7 +42,7 @@ export async function POST(request: NextRequest) {
       name: room.name,
       created: true,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Create room error:', error)
     return NextResponse.json(
       { error: 'Failed to create room' },
@@ -46,6 +53,11 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const searchParams = request.nextUrl.searchParams
     const roomId = searchParams.get('roomId')
 
@@ -66,7 +78,7 @@ export async function GET(request: NextRequest) {
       isActive: room.isActive,
       createdAt: room.createdAt,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Get room error:', error)
     return NextResponse.json(
       { error: 'Failed to get room' },
