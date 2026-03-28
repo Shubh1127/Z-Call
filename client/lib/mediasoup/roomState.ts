@@ -25,6 +25,7 @@ export interface PeerState {
 
 export interface RoomState {
   roomId: string
+  hostPeerId?: string
   peers: Map<string, PeerState>
 }
 
@@ -36,7 +37,7 @@ const rooms = new Map<string, RoomState>()
 
 export function getOrCreateRoom(roomId: string): RoomState {
   if (!rooms.has(roomId)) {
-    rooms.set(roomId, { roomId, peers: new Map() })
+    rooms.set(roomId, { roomId, peers: new Map(), hostPeerId: undefined })
   }
   return rooms.get(roomId)!
 }
@@ -58,6 +59,9 @@ export function addPeer(
   socketId: string
 ): PeerState {
   const room = getOrCreateRoom(roomId)
+  if (!room.hostPeerId) {
+    room.hostPeerId = peerId
+  }
   const peer: PeerState = {
     peerId,
     name,

@@ -1,4 +1,5 @@
 import { Server, Socket } from 'socket.io'
+import * as mediasoup from 'mediasoup'
 import { connectDB } from '../db/connect'
 import { Room } from '../models/Room'
 import { Peer } from '../models/Peer'
@@ -8,6 +9,7 @@ import { createWebRtcTransport, transportParams } from '../mediasoup/transport'
 import {
   addPeer,
   getPeer,
+  getRoom,
   removePeer,
   getPeerBySocket,
   getProducersForRoom,
@@ -16,13 +18,63 @@ import {
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-function ack(callback: Function, data: object) {
+type AckCallback = (data: Record<string, unknown>) => void
+
+function ack(callback: AckCallback | undefined, data: Record<string, unknown>) {
   if (typeof callback === 'function') callback(data)
 }
 
 // ─── Main handler registration ────────────────────────────────────────────────
 
 export function registerSocketHandlers(io: Server) {
+  const handlePeerLeave = async (
+    socket: Socket,
+    roomId: string,
+    peerId: string,
+    reason: 'leave-room' | 'disconnect'
+  ) => {
+    const roomState = getRoom(roomId)
+    if (!roomState) return
+
+    const isHostLeaving = roomState.hostPeerId === peerId
+
+    if (isHostLeaving) {
+      // Host leaving ends the meeting for everyone still connected.
+      io.to(roomId).emit('meeting-ended', { roomId, hostPeerId: peerId })
+
+      const peerIds = [...roomState.peers.keys()]
+      peerIds.forEach((id) => removePeer(roomId, id))
+
+      try {
+        await connectDB()
+        await Promise.all([
+          Peer.deleteMany({ roomId }),
+          Room.findOneAndUpdate({ roomId }, { isActive: false }),
+        ])
+      } catch (err) {
+        console.error('Host leave cleanup error:', err)
+      }
+
+      closeRouter(roomId)
+      console.log(`🏁 Meeting ended by host ${peerId} in room ${roomId} (${reason})`)
+      return
+    }
+
+    removePeer(roomId, peerId)
+    socket.to(roomId).emit('peer-left', { peerId })
+
+    const updatedRoom = getRoom(roomId)
+    if (!updatedRoom || updatedRoom.peers.size === 0) {
+      try {
+        await connectDB()
+        await Room.findOneAndUpdate({ roomId }, { isActive: false })
+      } catch (err) {
+        console.error('Room cleanup error:', err)
+      }
+      closeRouter(roomId)
+    }
+  }
+
   io.on('connection', (socket: Socket) => {
     console.log(`🔌 Socket connected: ${socket.id}`)
 
@@ -35,7 +87,7 @@ export function registerSocketHandlers(io: Server) {
       'join-room',
       async (
         { roomId, peerId, name }: { roomId: string; peerId: string; name: string },
-        callback: Function
+        callback?: AckCallback
       ) => {
         try {
           await connectDB()
@@ -89,11 +141,11 @@ export function registerSocketHandlers(io: Server) {
     )
 
     // ── 2. GET RTP CAPABILITIES ─────────────────────────────────────────────
-    socket.on('get-rtp-capabilities', async ({ roomId }: { roomId: string }, callback: Function) => {
+    socket.on('get-rtp-capabilities', async ({ roomId }: { roomId: string }, callback?: AckCallback) => {
       try {
         const router = await getOrCreateRouter(roomId)
         ack(callback, { rtpCapabilities: router.rtpCapabilities })
-      } catch (err) {
+      } catch {
         ack(callback, { error: 'Failed to get RTP capabilities' })
       }
     })
@@ -107,7 +159,7 @@ export function registerSocketHandlers(io: Server) {
       'create-transport',
       async (
         { roomId, peerId, direction }: { roomId: string; peerId: string; direction: 'send' | 'recv' },
-        callback: Function
+        callback?: AckCallback
       ) => {
         try {
           const router = await getOrCreateRouter(roomId)
@@ -146,9 +198,9 @@ export function registerSocketHandlers(io: Server) {
           roomId: string
           peerId: string
           direction: 'send' | 'recv'
-          dtlsParameters: any
+          dtlsParameters: mediasoup.types.DtlsParameters
         },
-        callback: Function
+        callback?: AckCallback
       ) => {
         try {
           const peer = getPeer(roomId, peerId)
@@ -184,10 +236,10 @@ export function registerSocketHandlers(io: Server) {
           roomId: string
           peerId: string
           kind: 'audio' | 'video'
-          rtpParameters: any
+          rtpParameters: mediasoup.types.RtpParameters
           source: 'camera' | 'microphone' | 'screen'
         },
-        callback: Function
+        callback?: AckCallback
       ) => {
         try {
           const peer = getPeer(roomId, peerId)
@@ -242,9 +294,9 @@ export function registerSocketHandlers(io: Server) {
           roomId: string
           peerId: string
           producerId: string
-          rtpCapabilities: any
+          rtpCapabilities: mediasoup.types.RtpCapabilities
         },
-        callback: Function
+        callback?: AckCallback
       ) => {
         try {
           const router = await getOrCreateRouter(roomId)
@@ -291,7 +343,7 @@ export function registerSocketHandlers(io: Server) {
       'resume-consumer',
       async (
         { roomId, peerId, consumerId }: { roomId: string; peerId: string; consumerId: string },
-        callback: Function
+        callback?: AckCallback
       ) => {
         try {
           const peer = getPeer(roomId, peerId)
@@ -299,7 +351,7 @@ export function registerSocketHandlers(io: Server) {
           if (!consumer) return ack(callback, { error: 'Consumer not found' })
           await consumer.resume()
           ack(callback, { resumed: true })
-        } catch (err) {
+        } catch {
           ack(callback, { error: 'Failed to resume consumer' })
         }
       }
@@ -311,7 +363,7 @@ export function registerSocketHandlers(io: Server) {
      */
     socket.on(
       'get-producers',
-      ({ roomId, peerId }: { roomId: string; peerId: string }, callback: Function) => {
+      ({ roomId, peerId }: { roomId: string; peerId: string }, callback?: AckCallback) => {
         const producers = getProducersForRoom(roomId, peerId).map((p) => ({
           producerId: p.producerId,
           peerId:     p.peerId,
@@ -373,7 +425,26 @@ export function registerSocketHandlers(io: Server) {
       }
     )
 
-    // ── 11. DISCONNECT ──────────────────────────────────────────────────────
+    // ── 11. LEAVE ROOM (explicit) ─────────────────────────────────────────
+    socket.on(
+      'leave-room',
+      async (
+        { roomId, peerId }: { roomId: string; peerId: string },
+        callback?: AckCallback
+      ) => {
+        try {
+          await connectDB()
+          await Peer.deleteOne({ roomId, peerId })
+        } catch (err) {
+          console.error('DB leave-room cleanup error:', err)
+        }
+
+        await handlePeerLeave(socket, roomId, peerId, 'leave-room')
+        ack(callback, { left: true })
+      }
+    )
+
+    // ── 12. DISCONNECT ──────────────────────────────────────────────────────
     socket.on('disconnect', async () => {
       console.log(`🔌 Socket disconnected: ${socket.id}`)
 
@@ -389,22 +460,7 @@ export function registerSocketHandlers(io: Server) {
         console.error('DB cleanup error:', err)
       }
 
-      removePeer(roomId, peerId)
-
-      // Notify remaining peers
-      socket.to(roomId).emit('peer-left', { peerId })
-
-      // If room is now empty, mark inactive in DB
-      const roomState = getOrCreateRoom(roomId)
-      if (roomState.peers.size === 0) {
-        try {
-          await connectDB()
-          await Room.findOneAndUpdate({ roomId }, { isActive: false })
-          closeRouter(roomId)
-        } catch (err) {
-          console.error('Room cleanup error:', err)
-        }
-      }
+      await handlePeerLeave(socket, roomId, peerId, 'disconnect')
 
       console.log(`👤 Peer ${peerId} left room ${roomId}`)
     })

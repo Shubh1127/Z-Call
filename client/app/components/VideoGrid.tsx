@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useCallStore, RemotePeer } from '@/lib/client/store/useCallStore'
 import { VideoTile } from './VideoTile'
 
@@ -10,12 +10,26 @@ interface VideoGridProps {
   screenShareName?: string
 }
 
+function RemoteAudio({ stream }: { stream: MediaStream }) {
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  useEffect(() => {
+    if (!audioRef.current) return
+    audioRef.current.srcObject = stream
+    audioRef.current.play().catch(() => {
+      // Browser autoplay policies can block play until user interacts.
+    })
+  }, [stream])
+
+  return <audio ref={audioRef} autoPlay playsInline />
+}
+
 export function VideoGrid({
   isScreenSharing = false,
   screenShareStream,
   screenShareName = 'Screen Share',
 }: VideoGridProps) {
-  const { localStream, localScreenStream, myName, peers, isMicOn } = useCallStore()
+  const { localStream, myName, peers, isMicOn } = useCallStore()
   const isSharing = isScreenSharing
 
   // Determine the layout based on screen sharing status
@@ -40,8 +54,24 @@ export function VideoGrid({
     'screen-share': 'grid-cols-3 grid-rows-1',
   }
 
+  const getPreferredVideoStream = (peer: RemotePeer) => {
+    const streams = Array.from(peer.streams.values())
+    const screenStream = streams.find((s) => s.kind === 'video' && s.source === 'screen')
+    if (screenStream) return screenStream
+    return streams.find((s) => s.kind === 'video')
+  }
+
   return (
     <div className="w-full h-full bg-black p-4 rounded-lg">
+      {/* Hidden audio sinks for remote peer audio tracks */}
+      {Array.from(peers.values()).flatMap((peer: RemotePeer) =>
+        Array.from(peer.streams.entries())
+          .filter(([, data]) => data.kind === 'audio')
+          .map(([producerId, data]) => (
+            <RemoteAudio key={`${peer.peerId}-${producerId}`} stream={data.stream} />
+          ))
+      )}
+
       {/* Screen share mode */}
       {isSharing && screenShareStream && (
         <div className="grid grid-cols-3 gap-4 h-full">
@@ -71,9 +101,7 @@ export function VideoGrid({
 
             {/* Remote peers */}
             {Array.from(peers.values()).map((peer: RemotePeer) => {
-              const videoStream = Array.from(peer.streams.values()).find(
-                (s) => s.kind === 'video'
-              )
+              const videoStream = getPreferredVideoStream(peer)
               if (!videoStream) return null
 
               return (
@@ -110,9 +138,7 @@ export function VideoGrid({
           {Array.from(peers.values())
             .slice(0, layout === 'grid-1' ? 0 : layout === 'grid-2' ? 1 : 5)
             .map((peer: RemotePeer) => {
-              const videoStream = Array.from(peer.streams.values()).find(
-                (s) => s.kind === 'video'
-              )
+              const videoStream = getPreferredVideoStream(peer)
               if (!videoStream) return null
 
               return (

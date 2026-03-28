@@ -51,6 +51,11 @@ export interface CloseProducerPayload {
   producerId: string
 }
 
+export interface LeaveRoomPayload {
+  roomId: string
+  peerId: string
+}
+
 export interface ChatMessagePayload {
   roomId: string
   peerId: string
@@ -91,6 +96,11 @@ export interface IncomingChatMessage {
   sender: string
   content: string
   timestamp: string
+}
+
+export interface MeetingEndedEvent {
+  roomId: string
+  hostPeerId: string
 }
 
 // ─── Callback response shapes ─────────────────────────────────────────────────

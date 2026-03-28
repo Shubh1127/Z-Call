@@ -8,6 +8,7 @@ import type {
   ConsumeResponse,
   JoinRoomResponse,
   GetProducersResponse,
+  LeaveRoomPayload,
   NewProducerEvent,
   ProducerClosedEvent,
   ConsumerClosedEvent,
@@ -268,21 +269,48 @@ export function useMediasoup() {
   }, [setMicOn])
 
   // ── TOGGLE CAMERA ───────────────────────────────────────────────────────────
-  const toggleCamera = useCallback(() => {
+  const toggleCamera = useCallback(async () => {
     const { isCameraOn, cameraProducerId, localStream } = useCallStore.getState()
     const producer = cameraProducerId ? producers.current.get(cameraProducerId) : null
 
-    if (producer) {
-      if (isCameraOn) {
-        producer.pause()
-        localStream?.getVideoTracks().forEach((t) => (t.enabled = false))
-      } else {
-        producer.resume()
-        localStream?.getVideoTracks().forEach((t) => (t.enabled = true))
-      }
+    if (!producer || !localStream) {
+      return
     }
-    setCameraOn(!isCameraOn)
-  }, [setCameraOn])
+
+    if (isCameraOn) {
+      // Stop the camera track so laptop camera hardware (LED) turns off.
+      localStream.getVideoTracks().forEach((track) => {
+        track.enabled = false
+        track.stop()
+        localStream.removeTrack(track)
+      })
+      producer.pause()
+      setCameraOn(false)
+      return
+    }
+
+    try {
+      const cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720, frameRate: 30 },
+      })
+      const newVideoTrack = cameraStream.getVideoTracks()[0]
+      if (!newVideoTrack) {
+        throw new Error('No camera track available')
+      }
+
+      await producer.replaceTrack({ track: newVideoTrack })
+      producer.resume()
+
+      const refreshedLocalStream = new MediaStream([
+        ...localStream.getAudioTracks(),
+        newVideoTrack,
+      ])
+      setLocalStream(refreshedLocalStream)
+      setCameraOn(true)
+    } catch (err) {
+      console.error('Failed to re-enable camera:', err)
+    }
+  }, [setCameraOn, setLocalStream])
 
   // ── START SCREEN SHARE ──────────────────────────────────────────────────────
   const startScreenShare = useCallback(async () => {
@@ -308,13 +336,29 @@ export function useMediasoup() {
       setScreenSharing(true)
 
       // Auto-stop when user clicks browser's "Stop sharing" button
-      screenTrack.onended = () => stopScreenShare()
+      screenTrack.onended = () => {
+        const { screenProducerId, localScreenStream } = useCallStore.getState()
+
+        if (screenProducerId) {
+          const producer = producers.current.get(screenProducerId)
+          if (producer) {
+            producer.close()
+            producers.current.delete(screenProducerId)
+            emit('close-producer', { roomId, peerId, producerId: screenProducerId })
+          }
+          setScreenProducerId(null)
+        }
+
+        localScreenStream?.getTracks().forEach((t) => t.stop())
+        setLocalScreenStream(null)
+        setScreenSharing(false)
+      }
     } catch (err: any) {
       if (err.name !== 'NotAllowedError') {
         console.error('Screen share error:', err)
       }
     }
-  }, [setLocalScreenStream, setScreenProducerId, setScreenSharing])
+  }, [roomId, peerId, emit, setLocalScreenStream, setScreenProducerId, setScreenSharing])
 
   // ── STOP SCREEN SHARE ───────────────────────────────────────────────────────
   const stopScreenShare = useCallback(() => {
@@ -336,7 +380,14 @@ export function useMediasoup() {
   }, [roomId, peerId, emit, setScreenProducerId, setLocalScreenStream, setScreenSharing])
 
   // ── LEAVE ROOM ──────────────────────────────────────────────────────────────
-  const leaveRoom = useCallback(() => {
+  const leaveRoom = useCallback(async () => {
+    try {
+      const payload: LeaveRoomPayload = { roomId, peerId }
+      await emitWithAck<{ left?: boolean }>('leave-room', payload)
+    } catch {
+      // Ignore acknowledgement errors on leave and continue local cleanup.
+    }
+
     // Close all producers
     producers.current.forEach((p) => p.close())
     producers.current.clear()
@@ -354,7 +405,7 @@ export function useMediasoup() {
 
     // Reset Zustand store (also stops local tracks)
     reset()
-  }, [reset])
+  }, [roomId, peerId, emitWithAck, reset])
 
   return {
     joinRoom,

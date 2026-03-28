@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallStore } from '@/lib/client/store/useCallStore'
 import { useMediasoup } from '@/lib/client/useMediasoup'
 import { useChat } from '@/lib/client/useChat'
+import { useSocket } from '@/lib/client/useSocket'
 import { VideoGrid } from '@/app/components/VideoGrid'
 import { Controls } from '@/app/components/Controls'
 import { ChatPanel } from '@/app/components/ChatPanel'
@@ -13,7 +14,7 @@ export default function RoomPage() {
   const params = useParams()
   const router = useRouter()
   const roomId = params.roomId as string
-  const [isInitialized, setIsInitialized] = useState(false)
+  const hasStartedJoinRef = useRef(false)
 
   const {
     isConnected,
@@ -34,17 +35,18 @@ export default function RoomPage() {
     startScreenShare,
     stopScreenShare,
   } = useMediasoup()
+  const { on } = useSocket()
 
   const { sendMessage } = useChat()
 
   // Join room on mount
   useEffect(() => {
-    if (!roomId || !peerId || !myName || isInitialized) return
+    if (!roomId || !peerId || !myName || hasStartedJoinRef.current) return
 
     console.log('Initializing room...')
+    hasStartedJoinRef.current = true
     joinRoom()
-    setIsInitialized(true)
-  }, [roomId, peerId, myName, isInitialized, joinRoom])
+  }, [roomId, peerId, myName, joinRoom])
 
   // Handle screen share toggle
   const handleScreenShare = () => {
@@ -56,8 +58,8 @@ export default function RoomPage() {
   }
 
   // Handle end call
-  const handleEndCall = () => {
-    leaveRoom()
+  const handleEndCall = async () => {
+    await leaveRoom()
     router.push('/')
   }
 
@@ -66,8 +68,18 @@ export default function RoomPage() {
     sendMessage(message)
   }
 
+  // Auto-end meeting for participants when host leaves.
+  useEffect(() => {
+    const cleanup = on('meeting-ended', async () => {
+      await leaveRoom()
+      router.push('/')
+    })
+
+    return cleanup
+  }, [on, leaveRoom, router])
+
   // Show loading state
-  if (isJoining || !isInitialized) {
+  if (isJoining) {
     return (
       <div className="flex items-center justify-center w-full h-screen bg-black">
         <div className="text-center">
