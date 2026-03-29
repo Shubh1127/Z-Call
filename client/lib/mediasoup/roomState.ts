@@ -14,6 +14,7 @@ export interface ProducerInfo {
 export interface PeerState {
   peerId: string
   name: string
+  image?: string
   socketId: string
   /** send transport */
   sendTransport?: mediasoup.types.WebRtcTransport
@@ -56,6 +57,7 @@ export function addPeer(
   roomId: string,
   peerId: string,
   name: string,
+  image: string | undefined,
   socketId: string
 ): PeerState {
   const room = getOrCreateRoom(roomId)
@@ -65,6 +67,7 @@ export function addPeer(
   const peer: PeerState = {
     peerId,
     name,
+    image,
     socketId,
     producers: new Map(),
     consumers: new Map(),

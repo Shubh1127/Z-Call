@@ -29,10 +29,11 @@ export function useMediasoup() {
   const recvTransport   = useRef<any>(null)
   const producers       = useRef<Map<string, any>>(new Map())
   const consumers       = useRef<Map<string, any>>(new Map())
+  const consumedProducerIds = useRef<Set<string>>(new Set())
 
   // Zustand store actions
   const {
-    roomId, peerId, myName,
+    roomId, peerId, myName, myImage,
     setJoining, setJoinError,
     setLocalStream, setLocalScreenStream,
     setCameraProducerId, setMicProducerId, setScreenProducerId,
@@ -99,6 +100,16 @@ export function useMediasoup() {
       const device = deviceRef.current
       if (!device || !recvTransport.current) return
 
+      if (consumedProducerIds.current.has(producerId)) {
+        return
+      }
+
+      // Ensure the remote peer exists in the store before attaching streams.
+      const state = useCallStore.getState()
+      if (!state.peers.has(remotePeerId)) {
+        addPeer(remotePeerId, 'Participant')
+      }
+
       const res = await emitWithAck<ConsumeResponse>('consume', {
         roomId, peerId,
         producerId,
@@ -118,6 +129,7 @@ export function useMediasoup() {
       })
 
       consumers.current.set(consumer.id, consumer)
+      consumedProducerIds.current.add(producerId)
 
       // Wrap track in a MediaStream and push to store
       const stream = new MediaStream([consumer.track])
@@ -131,10 +143,12 @@ export function useMediasoup() {
       consumer.on('transportclose', () => {
         consumer.close()
         consumers.current.delete(consumer.id)
+        consumedProducerIds.current.delete(producerId)
         removeRemoteStream(remotePeerId, producerId)
       })
 
       consumer.on('trackended', () => {
+        consumedProducerIds.current.delete(producerId)
         removeRemoteStream(remotePeerId, producerId)
       })
     },
@@ -149,7 +163,7 @@ export function useMediasoup() {
     try {
       // 1. Emit join-room — get RTP capabilities + existing peers + chat history
       const joinRes = await emitWithAck<JoinRoomResponse>('join-room', {
-        roomId, peerId, name: myName,
+        roomId, peerId, name: myName, image: myImage,
       })
       if (joinRes.error) throw new Error(joinRes.error)
 
@@ -159,7 +173,7 @@ export function useMediasoup() {
       }
 
       // 3. Add existing peers to store
-      joinRes.existingPeers?.forEach((p) => addPeer(p.peerId, p.name))
+      joinRes.existingPeers?.forEach((p) => addPeer(p.peerId, p.name, p.image))
 
       // 4. Load mediasoup Device
       const device = new Device()
@@ -205,7 +219,13 @@ export function useMediasoup() {
       producers.current.set(audioProducer.id, audioProducer)
       setMicProducerId(audioProducer.id)
 
-      // 9. Consume all existing producers in the room
+      // 9. Listen for new producers joining after us
+      on('new-producer', async (event: NewProducerEvent) => {
+        addPeer(event.peerId, event.name, event.image)
+        await consumeProducer(event.producerId, event.peerId, event.kind, event.source)
+      })
+
+      // 10. Consume all existing producers in the room
       const prodRes = await emitWithAck<GetProducersResponse>('get-producers', { roomId, peerId })
       await Promise.all(
         prodRes.producers.map((p) =>
@@ -213,14 +233,9 @@ export function useMediasoup() {
         )
       )
 
-      // 10. Listen for new producers joining after us
-      on('new-producer', async (event: NewProducerEvent) => {
-        addPeer(event.peerId, event.name)
-        await consumeProducer(event.producerId, event.peerId, event.kind, event.source)
-      })
-
       // 11. Listen for producers being closed
       on('producer-closed', ({ producerId, peerId: remotePeerId }: ProducerClosedEvent) => {
+        consumedProducerIds.current.delete(producerId)
         removeRemoteStream(remotePeerId, producerId)
       })
 
@@ -232,7 +247,7 @@ export function useMediasoup() {
       })
 
       // 13. Peer joined / left events
-      on('peer-joined', ({ peerId: id, name }: PeerJoinedEvent) => addPeer(id, name))
+      on('peer-joined', ({ peerId: id, name, image }: PeerJoinedEvent) => addPeer(id, name, image))
       on('peer-left',   ({ peerId: id }: PeerLeftEvent) => removePeer(id))
 
       setJoining(false)
@@ -243,7 +258,7 @@ export function useMediasoup() {
       setJoining(false)
     }
   }, [
-    roomId, peerId, myName,
+    roomId, peerId, myName, myImage,
     emitWithAck, on,
     createTransport, consumeProducer,
     setJoining, setJoinError,
@@ -271,25 +286,36 @@ export function useMediasoup() {
   // ── TOGGLE CAMERA ───────────────────────────────────────────────────────────
   const toggleCamera = useCallback(async () => {
     const { isCameraOn, cameraProducerId, localStream } = useCallStore.getState()
-    const producer = cameraProducerId ? producers.current.get(cameraProducerId) : null
-
-    if (!producer || !localStream) {
-      return
-    }
+    const existingProducer = cameraProducerId ? producers.current.get(cameraProducerId) : null
 
     if (isCameraOn) {
+      if (existingProducer && cameraProducerId) {
+        existingProducer.close()
+        producers.current.delete(cameraProducerId)
+        emit('close-producer', { roomId, peerId, producerId: cameraProducerId })
+        setCameraProducerId(null)
+      }
+
       // Stop the camera track so laptop camera hardware (LED) turns off.
-      localStream.getVideoTracks().forEach((track) => {
+      localStream?.getVideoTracks().forEach((track) => {
         track.enabled = false
         track.stop()
-        localStream.removeTrack(track)
+        localStream?.removeTrack(track)
       })
-      producer.pause()
+
+      if (localStream) {
+        setLocalStream(new MediaStream([...localStream.getAudioTracks()]))
+      }
+
       setCameraOn(false)
       return
     }
 
     try {
+      if (!sendTransport.current) {
+        throw new Error('Send transport not ready')
+      }
+
       const cameraStream = await navigator.mediaDevices.getUserMedia({
         video: { width: 1280, height: 720, frameRate: 30 },
       })
@@ -298,11 +324,22 @@ export function useMediasoup() {
         throw new Error('No camera track available')
       }
 
-      await producer.replaceTrack({ track: newVideoTrack })
-      producer.resume()
+      const cameraProducer = await sendTransport.current.produce({
+        track: newVideoTrack,
+        encodings: [
+          { maxBitrate: 100_000, scaleResolutionDownBy: 4 },
+          { maxBitrate: 300_000, scaleResolutionDownBy: 2 },
+          { maxBitrate: 900_000 },
+        ],
+        codecOptions: { videoGoogleStartBitrate: 1000 },
+        appData: { source: 'camera' },
+      })
+
+      producers.current.set(cameraProducer.id, cameraProducer)
+      setCameraProducerId(cameraProducer.id)
 
       const refreshedLocalStream = new MediaStream([
-        ...localStream.getAudioTracks(),
+        ...(localStream?.getAudioTracks() || []),
         newVideoTrack,
       ])
       setLocalStream(refreshedLocalStream)
@@ -310,7 +347,7 @@ export function useMediasoup() {
     } catch (err) {
       console.error('Failed to re-enable camera:', err)
     }
-  }, [setCameraOn, setLocalStream])
+  }, [roomId, peerId, emit, setCameraOn, setCameraProducerId, setLocalStream])
 
   // ── START SCREEN SHARE ──────────────────────────────────────────────────────
   const startScreenShare = useCallback(async () => {
@@ -395,6 +432,7 @@ export function useMediasoup() {
     // Close all consumers
     consumers.current.forEach((c) => c.close())
     consumers.current.clear()
+    consumedProducerIds.current.clear()
 
     // Close transports
     sendTransport.current?.close()

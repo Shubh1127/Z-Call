@@ -19,6 +19,16 @@ const handle = app.getRequestHandler()
 
 app.prepare().then(async () => {
   try {
+    const appOrigin = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const allowedOrigins = new Set(
+      [
+        appOrigin,
+        process.env.NEXT_PUBLIC_SOCKET_URL,
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+      ].filter(Boolean)
+    )
+
     // 1. Connect to MongoDB
     await connectDB()
     console.log('✅ MongoDB connected')
@@ -36,7 +46,12 @@ app.prepare().then(async () => {
     // 4. Attach Socket.IO
     const io = new SocketIOServer(httpServer, {
       cors: {
-        origin: process.env.NEXT_PUBLIC_APP_URL || '*',
+        origin: (origin, callback) => {
+          if (!origin || allowedOrigins.has(origin)) {
+            return callback(null, true)
+          }
+          return callback(new Error(`Socket CORS blocked for origin: ${origin}`))
+        },
         methods: ['GET', 'POST'],
         credentials: true,
       },
@@ -45,9 +60,10 @@ app.prepare().then(async () => {
 
     io.use(async (socket, nextAuth) => {
       try {
+        const cookieHeader = socket.handshake.headers.cookie || ''
         const reqLike = {
           headers: {
-            cookie: socket.handshake.headers.cookie || '',
+            cookie: cookieHeader,
           },
         } as Parameters<typeof getToken>[0]['req']
 
@@ -56,15 +72,62 @@ app.prepare().then(async () => {
           secret: process.env.NEXTAUTH_SECRET,
         })
 
-        if (!token?.email) {
-          return nextAuth(new Error('Unauthorized socket connection'))
+        // Fallback across cookie names used by NextAuth in dev/prod/proxy setups.
+        const tokenWithDefaultCookie =
+          token ||
+          (await getToken({
+            req: reqLike,
+            secret: process.env.NEXTAUTH_SECRET,
+            cookieName: 'next-auth.session-token',
+          })) ||
+          (await getToken({
+            req: reqLike,
+            secret: process.env.NEXTAUTH_SECRET,
+            cookieName: '__Secure-next-auth.session-token',
+          })) ||
+          (await getToken({
+            req: reqLike,
+            secret: process.env.NEXTAUTH_SECRET,
+            cookieName: 'authjs.session-token',
+          })) ||
+          (await getToken({
+            req: reqLike,
+            secret: process.env.NEXTAUTH_SECRET,
+            cookieName: '__Secure-authjs.session-token',
+          }))
+
+        if (tokenWithDefaultCookie && tokenWithDefaultCookie.sub) {
+          socket.data.user = {
+            email: tokenWithDefaultCookie.email || tokenWithDefaultCookie.sub,
+            name: tokenWithDefaultCookie.name || 'User',
+            image: (tokenWithDefaultCookie.picture as string | undefined) || '',
+          }
+          return nextAuth()
         }
 
-        socket.data.user = {
-          email: token.email,
-          name: token.name || 'User',
+        // Fallback: verify the same cookie via NextAuth session endpoint.
+        if (cookieHeader) {
+          const sessionResponse = await fetch(`${appOrigin}/api/auth/session`, {
+            headers: { cookie: cookieHeader },
+          })
+
+          if (sessionResponse.ok) {
+            const session = (await sessionResponse.json()) as {
+              user?: { name?: string | null; email?: string | null; image?: string | null }
+            }
+
+            if (session.user?.email || session.user?.name) {
+              socket.data.user = {
+                email: session.user?.email || 'unknown-user',
+                name: session.user?.name || 'User',
+                image: session.user?.image || '',
+              }
+              return nextAuth()
+            }
+          }
         }
-        return nextAuth()
+
+        return nextAuth(new Error('Unauthorized socket connection'))
       } catch (err) {
         return nextAuth(err as Error)
       }

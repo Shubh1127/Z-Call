@@ -70,10 +70,12 @@ export default function RoomPage() {
 
   // Auto-end meeting for participants when host leaves.
   useEffect(() => {
-    const cleanup = on('meeting-ended', async () => {
-      await leaveRoom()
-      router.push('/')
-    })
+    const handleMeetingEnded = () => {
+      leaveRoom().then(() => {
+        router.push('/')
+      })
+    }
+    const cleanup = on('meeting-ended', handleMeetingEnded)
 
     return cleanup
   }, [on, leaveRoom, router])
@@ -125,7 +127,7 @@ export default function RoomPage() {
       {/* Main content area */}
       <div className="flex-1 flex gap-4 min-h-0">
         {/* Video grid (takes most space) */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0  ">
           <VideoGrid
             isScreenSharing={isScreenSharing}
             screenShareStream={localScreenStream}

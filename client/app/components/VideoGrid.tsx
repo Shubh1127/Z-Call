@@ -29,7 +29,7 @@ export function VideoGrid({
   screenShareStream,
   screenShareName = 'Screen Share',
 }: VideoGridProps) {
-  const { localStream, myName, peers, isMicOn } = useCallStore()
+  const { localStream, myName, myImage, peers, isMicOn } = useCallStore()
   const isSharing = isScreenSharing
 
   // Determine the layout based on screen sharing status
@@ -80,6 +80,7 @@ export function VideoGrid({
             <VideoTile
               stream={screenShareStream}
               name={screenShareName}
+              image={undefined}
               isMuted={true}
               isLocalStream={false}
             />
@@ -93,6 +94,7 @@ export function VideoGrid({
                 <VideoTile
                   stream={localStream}
                   name={myName || 'You'}
+                  image={myImage}
                   isMuted={!isMicOn}
                   isLocalStream={true}
                 />
@@ -102,13 +104,12 @@ export function VideoGrid({
             {/* Remote peers */}
             {Array.from(peers.values()).map((peer: RemotePeer) => {
               const videoStream = getPreferredVideoStream(peer)
-              if (!videoStream) return null
-
               return (
                 <div key={peer.peerId} className="flex-1 min-h-24 rounded-lg overflow-hidden">
                   <VideoTile
-                    stream={videoStream.stream}
+                    stream={videoStream?.stream || null}
                     name={peer.name}
+                    image={peer.image}
                     isSpeaking={peer.isSpeaking}
                     isMuted={false}
                   />
@@ -128,6 +129,7 @@ export function VideoGrid({
               <VideoTile
                 stream={localStream}
                 name={myName || 'You'}
+                image={myImage}
                 isMuted={!isMicOn}
                 isLocalStream={true}
               />
@@ -139,13 +141,12 @@ export function VideoGrid({
             .slice(0, layout === 'grid-1' ? 0 : layout === 'grid-2' ? 1 : 5)
             .map((peer: RemotePeer) => {
               const videoStream = getPreferredVideoStream(peer)
-              if (!videoStream) return null
-
               return (
                 <div key={peer.peerId} className="rounded-lg overflow-hidden">
                   <VideoTile
-                    stream={videoStream.stream}
+                    stream={videoStream?.stream || null}
                     name={peer.name}
+                    image={peer.image}
                     isSpeaking={peer.isSpeaking}
                   />
                 </div>

@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import Image from 'next/image'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 interface VideoTileProps {
-  stream: MediaStream
+  stream?: MediaStream | null
   name: string
+  image?: string
   isSpeaking?: boolean
   isMuted?: boolean
   isLocalStream?: boolean
@@ -13,31 +15,106 @@ interface VideoTileProps {
 export function VideoTile({
   stream,
   name,
+  image,
   isSpeaking = false,
   isMuted = false,
   isLocalStream = false,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [, setTrackVersion] = useState(0)
+
+  const videoTrack = useMemo(() => stream?.getVideoTracks()[0] || null, [stream])
+  const hasRenderableVideo = !!videoTrack && videoTrack.readyState === 'live'
+
+  const tileBackground = useMemo(() => {
+    const colors = [
+      'bg-rose-600',
+      'bg-orange-600',
+      'bg-amber-600',
+      'bg-emerald-600',
+      'bg-cyan-600',
+      'bg-sky-600',
+      'bg-indigo-600',
+      'bg-fuchsia-600',
+    ]
+
+    let hash = 0
+    for (let i = 0; i < name.length; i += 1) {
+      hash = (hash << 5) - hash + name.charCodeAt(i)
+      hash |= 0
+    }
+    return colors[Math.abs(hash) % colors.length]
+  }, [name])
+
+  const initial = useMemo(() => {
+    const firstChar = name.trim().charAt(0)
+    return firstChar ? firstChar.toUpperCase() : 'U'
+  }, [name])
 
   useEffect(() => {
-    if (!videoRef.current || !stream) return
+    if (!videoTrack) {
+      return
+    }
+
+    const bumpTrackVersion = () => {
+      setTrackVersion((v) => v + 1)
+    }
+
+    videoTrack.addEventListener('mute', bumpTrackVersion)
+    videoTrack.addEventListener('unmute', bumpTrackVersion)
+    videoTrack.addEventListener('ended', bumpTrackVersion)
+
+    return () => {
+      videoTrack.removeEventListener('mute', bumpTrackVersion)
+      videoTrack.removeEventListener('unmute', bumpTrackVersion)
+      videoTrack.removeEventListener('ended', bumpTrackVersion)
+    }
+  }, [videoTrack])
+
+  useEffect(() => {
+    if (!videoRef.current || !stream || !hasRenderableVideo) return
 
     videoRef.current.srcObject = stream
     videoRef.current
       .play()
       .catch((err) => console.error('Video play failed:', err))
-  }, [stream])
+  }, [stream, hasRenderableVideo])
 
   return (
-    <div className="relative w-full h-full bg-black rounded-lg overflow-hidden group">
+    <div
+      className={`relative w-full h-full rounded-lg overflow-hidden group ${
+        hasRenderableVideo ? 'bg-black' : tileBackground
+      }`}
+    >
+      {/* Avatar layer */}
+      {!hasRenderableVideo && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          {image ? (
+            <Image
+              src={image}
+              alt={`${name} avatar`}
+              width={112}
+              height={112}
+              className="h-28 w-28 rounded-full border-2 border-white/30 object-cover"
+            />
+          ) : (
+            <div className="flex h-28 w-28 items-center justify-center rounded-full border-2 border-white/30 bg-black/20 text-4xl font-bold text-white">
+              {initial}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Video element */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted={isLocalStream || isMuted}
-        className="w-full h-full object-cover"
-      />
+      {hasRenderableVideo && (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={isLocalStream || isMuted}
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      )}
 
       {/* Speaking indicator border */}
       {isSpeaking && (

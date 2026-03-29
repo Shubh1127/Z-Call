@@ -13,7 +13,6 @@ const webRtcTransportOptions: mediasoup.types.WebRtcTransportOptions = {
   enableTcp: true,
   preferUdp: true,
   initialAvailableOutgoingBitrate: 1_000_000,
-  minimumAvailableOutgoingBitrate: 600_000,
   maxSctpMessageSize: 262144,
 }
 

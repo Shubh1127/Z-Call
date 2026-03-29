@@ -3,18 +3,21 @@
 import { useEffect, useState } from 'react'
 import { signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { useCallStore } from '@/lib/client/store/useCallStore'
 import { v4 as uuidv4 } from 'uuid'
 import { Video, User } from 'lucide-react'
 
 interface HomeDashboardProps {
   userName: string
+  userImage?: string
 }
 
-export default function HomeDashboard({ userName }: HomeDashboardProps) {
+export default function HomeDashboard({ userName, userImage }: HomeDashboardProps) {
   const router = useRouter()
   const { setIdentity } = useCallStore()
   const [current, setCurrent] = useState<Date>(new Date())
+  const [hasMounted, setHasMounted] = useState(false)
   const [roomId, setRoomId] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
@@ -38,7 +41,7 @@ export default function HomeDashboard({ userName }: HomeDashboardProps) {
         throw new Error('Failed to create room')
       }
 
-      setIdentity(newRoomId, peerId, userName)
+      setIdentity(newRoomId, peerId, userName, userImage || '')
       router.push(`/room/${newRoomId}`)
     } catch (err) {
       console.error('Failed to create room:', err)
@@ -62,7 +65,7 @@ export default function HomeDashboard({ userName }: HomeDashboardProps) {
         throw new Error('Room not found')
       }
 
-      setIdentity(roomId, peerId, userName)
+      setIdentity(roomId, peerId, userName, userImage || '')
       router.push(`/room/${roomId}`)
     } catch (err) {
       console.error('Failed to join room:', err)
@@ -72,6 +75,8 @@ export default function HomeDashboard({ userName }: HomeDashboardProps) {
   }
 
   useEffect(() => {
+    setHasMounted(true)
+
     const interval = setInterval(() => {
       setCurrent(new Date())
     }, 60000)
@@ -90,6 +95,8 @@ export default function HomeDashboard({ userName }: HomeDashboardProps) {
     day: 'numeric',
   })
 
+  const dateTimeText = hasMounted ? `${time} | ${date}` : '--:-- | --- --'
+
   return (
     <div className="flex flex-col p-4">
       <div className="mb-8 flex w-full cursor-pointer items-center justify-between gap-3 px-8 hover:border-gray-500">
@@ -101,12 +108,25 @@ export default function HomeDashboard({ userName }: HomeDashboardProps) {
         </div>
         <div className="flex items-center gap-6">
           <div>
-            {time} | {date}
+            {dateTimeText}
           </div>
           <div className="flex items-center gap-2 rounded-full border px-3 py-1">
             <div className="max-w-32 truncate">{userName}</div>
             <span className="rounded-full border p-1">
-              <User />
+                {
+                    userImage ? (
+                        <Image
+                          src={userImage}
+                          alt="User Avatar"
+                          width={24}
+                          height={24}
+                          className="h-6 w-6 rounded-full object-cover"
+                        />
+                    ) :(
+
+                        <User />
+                    )
+                }
             </span>
           </div>
           <button
@@ -128,7 +148,7 @@ export default function HomeDashboard({ userName }: HomeDashboardProps) {
           {isLoading ? (
             'Loading...'
           ) : (
-            <span className="flex w-max items-center gap-2 rounded-full bg-blue-500 p-3">
+            <span className="flex w-max items-center gap-2 rounded-full bg-blue-500 p-3 cursor-pointer hover:bg-blue-600">
               <Video />
               new meeting
             </span>

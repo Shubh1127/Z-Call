@@ -9,6 +9,7 @@ export interface JoinRoomPayload {
   roomId: string
   peerId: string
   name: string
+  image?: string
 }
 
 export interface CreateTransportPayload {
@@ -68,6 +69,7 @@ export interface ChatMessagePayload {
 export interface PeerJoinedEvent {
   peerId: string
   name: string
+  image?: string
 }
 
 export interface PeerLeftEvent {
@@ -78,6 +80,7 @@ export interface NewProducerEvent {
   producerId: string
   peerId: string
   name: string
+  image?: string
   kind: 'audio' | 'video'
   source: 'camera' | 'microphone' | 'screen'
 }
@@ -107,7 +110,7 @@ export interface MeetingEndedEvent {
 
 export interface JoinRoomResponse {
   rtpCapabilities?: object
-  existingPeers?: { peerId: string; name: string }[]
+  existingPeers?: { peerId: string; name: string; image?: string }[]
   chatHistory?: IncomingChatMessage[]
   error?: string
 }

@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
       created: true,
     })
   } catch (error: unknown) {
+    console.log("🚨 SHUBHAM Error in /api/rooms POST handler:", error)
     console.error('Create room error:', error)
     return NextResponse.json(
       { error: 'Failed to create room' },

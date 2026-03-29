@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useCallback } from 'react'
 import { io, Socket } from 'socket.io-client'
 import { useCallStore } from './store/useCallStore'
 
@@ -10,8 +10,13 @@ let socketInstance: Socket | null = null
 
 function getSocket(): Socket {
   if (!socketInstance) {
-    socketInstance = io(process.env.NEXT_PUBLIC_SOCKET_URL || '', {
-      transports: ['websocket', 'polling'],
+    const socketUrl =
+      process.env.NEXT_PUBLIC_SOCKET_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : '')
+
+    socketInstance = io(socketUrl, {
+      transports: ['polling', 'websocket'],
+      withCredentials: true,
       autoConnect: false,
       reconnection: true,
       reconnectionAttempts: 5,
@@ -24,13 +29,11 @@ function getSocket(): Socket {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useSocket() {
-  const socketRef = useRef<Socket>(getSocket())
+  const socket = getSocket()
   const setConnected = useCallStore((s) => s.setConnected)
   const setJoinError  = useCallStore((s) => s.setJoinError)
 
   useEffect(() => {
-    const socket = socketRef.current
-
     if (!socket.connected) {
       socket.connect()
     }
@@ -60,32 +63,34 @@ export function useSocket() {
       socket.off('disconnect', onDisconnect)
       socket.off('connect_error', onConnectError)
     }
-  }, [setConnected, setJoinError])
+  }, [socket, setConnected, setJoinError])
 
   /** Type-safe emit with acknowledgement (returns a Promise) */
   const emitWithAck = useCallback(
     <T = unknown>(event: string, payload?: object): Promise<T> => {
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error(`Timeout: ${event}`)), 10_000)
-        socketRef.current.emit(event, payload, (response: T) => {
+        socket.emit(event, payload, (response: T) => {
           clearTimeout(timeout)
           resolve(response)
         })
       })
     },
-    []
+    [socket]
   )
 
   /** Fire-and-forget emit */
   const emit = useCallback((event: string, payload?: object) => {
-    socketRef.current.emit(event, payload)
-  }, [])
+    socket.emit(event, payload)
+  }, [socket])
 
   /** Subscribe to a socket event, auto-cleans up on unmount */
   const on = useCallback((event: string, handler: (...args: any[]) => void) => {
-    socketRef.current.on(event, handler)
-    return () => socketRef.current.off(event, handler)
-  }, [])
+    socket.on(event, handler)
+    return () => {
+      socket.off(event, handler)
+    }
+  }, [socket])
 
   /** Disconnect and destroy singleton (call on app unmount / leave) */
   const disconnect = useCallback(() => {
@@ -94,7 +99,7 @@ export function useSocket() {
   }, [])
 
   return {
-    socket: socketRef.current,
+    socket,
     emitWithAck,
     emit,
     on,

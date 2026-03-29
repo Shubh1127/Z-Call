@@ -86,11 +86,12 @@ export function registerSocketHandlers(io: Server) {
     socket.on(
       'join-room',
       async (
-        { roomId, peerId, name }: { roomId: string; peerId: string; name: string },
+        { roomId, peerId, name, image }: { roomId: string; peerId: string; name: string; image?: string },
         callback?: AckCallback
       ) => {
         try {
           const authenticatedName = (socket.data.user?.name as string | undefined) || name || 'User'
+          const authenticatedImage = (socket.data.user?.image as string | undefined) || image || ''
 
           await connectDB()
 
@@ -101,12 +102,12 @@ export function registerSocketHandlers(io: Server) {
           // Upsert peer in DB
           await Peer.findOneAndUpdate(
             { roomId, peerId },
-            { name: authenticatedName, socketId: socket.id, joinedAt: new Date() },
+            { name: authenticatedName, image: authenticatedImage, socketId: socket.id, joinedAt: new Date() },
             { upsert: true, new: true }
           )
 
           // Add to in-memory state
-          addPeer(roomId, peerId, authenticatedName, socket.id)
+          addPeer(roomId, peerId, authenticatedName, authenticatedImage, socket.id)
           socket.join(roomId)
 
           // Get mediasoup router RTP capabilities for this room
@@ -116,7 +117,7 @@ export function registerSocketHandlers(io: Server) {
           const roomState = getOrCreateRoom(roomId)
           const existingPeers = [...roomState.peers.entries()]
             .filter(([id]) => id !== peerId)
-            .map(([id, p]) => ({ peerId: id, name: p.name }))
+            .map(([id, p]) => ({ peerId: id, name: p.name, image: p.image }))
 
           // Fetch last 50 chat messages for this room
           const chatHistory = await Message.find({ roomId })
@@ -126,7 +127,11 @@ export function registerSocketHandlers(io: Server) {
             .then((msgs) => msgs.reverse())
 
           // Notify others that a new peer joined
-          socket.to(roomId).emit('peer-joined', { peerId, name: authenticatedName })
+          socket.to(roomId).emit('peer-joined', {
+            peerId,
+            name: authenticatedName,
+            image: authenticatedImage,
+          })
 
           console.log(`👤 ${authenticatedName} (${peerId}) joined room ${roomId}`)
 
@@ -267,6 +272,7 @@ export function registerSocketHandlers(io: Server) {
             producerId: producer.id,
             peerId,
             name: peer.name,
+            image: peer.image,
             kind,
             source,
           })

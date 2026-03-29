@@ -1,3 +1,4 @@
+import 'server-only'
 import type { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 
@@ -33,12 +34,16 @@ export const authOptions: NextAuthOptions = {
       if (profile?.email) {
         token.email = profile.email
       }
+      if((profile as any)?.picture){
+        token.picture = (profile as any).picture
+      }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.name = token.name
         session.user.email = token.email
+        session.user.image = token.picture
       }
       return session
     },

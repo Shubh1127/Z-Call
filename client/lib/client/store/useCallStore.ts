@@ -13,6 +13,7 @@ export interface ChatMessage {
 export interface RemotePeer {
   peerId: string
   name: string
+  image?: string
   /** keyed by producerId */
   streams: Map<string, { stream: MediaStream; kind: 'audio' | 'video'; source: string }>
   isSpeaking: boolean
@@ -23,6 +24,7 @@ export interface CallState {
   roomId: string
   peerId: string
   myName: string
+  myImage: string
 
   // ── Connection ─────────────────────────────────────────────────────────────
   isConnected: boolean
@@ -54,7 +56,7 @@ export interface CallState {
 
 export interface CallActions {
   // ── Identity ───────────────────────────────────────────────────────────────
-  setIdentity: (roomId: string, peerId: string, name: string) => void
+  setIdentity: (roomId: string, peerId: string, name: string, image?: string) => void
 
   // ── Connection ─────────────────────────────────────────────────────────────
   setConnected: (val: boolean) => void
@@ -76,7 +78,7 @@ export interface CallActions {
   setScreenSharing: (val: boolean) => void
 
   // ── Peers ──────────────────────────────────────────────────────────────────
-  addPeer: (peerId: string, name: string) => void
+  addPeer: (peerId: string, name: string, image?: string) => void
   removePeer: (peerId: string) => void
   addRemoteStream: (
     peerId: string,
@@ -104,6 +106,7 @@ const initialState: CallState = {
   roomId: '',
   peerId: '',
   myName: '',
+  myImage: '',
 
   isConnected: false,
   isJoining: false,
@@ -135,7 +138,8 @@ export const useCallStore = create<CallState & CallActions>()(
       ...initialState,
 
       // ── Identity ─────────────────────────────────────────────────────────
-      setIdentity: (roomId, peerId, myName) => set({ roomId, peerId, myName }),
+      setIdentity: (roomId, peerId, myName, myImage = '') =>
+        set({ roomId, peerId, myName, myImage }),
 
       // ── Connection ────────────────────────────────────────────────────────
       setConnected: (isConnected) => set({ isConnected }),
@@ -157,13 +161,14 @@ export const useCallStore = create<CallState & CallActions>()(
       setScreenSharing: (isScreenSharing) => set({ isScreenSharing }),
 
       // ── Peers ─────────────────────────────────────────────────────────────
-      addPeer: (peerId, name) => {
+      addPeer: (peerId, name, image) => {
         set((state) => {
           const peers = new Map(state.peers)
           if (!peers.has(peerId)) {
             peers.set(peerId, {
               peerId,
               name,
+              image,
               streams: new Map(),
               isSpeaking: false,
             })

@@ -1,3 +1,4 @@
+
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import LandingPage from '@/app/components/LandingPage'
@@ -10,5 +11,5 @@ export default async function Home() {
     return <LandingPage />
   }
 
-  return <HomeDashboard userName={session.user.name || 'User'} />
+  return <HomeDashboard userName={session.user.name || 'User'} userImage={session.user.image || ''} />
 }

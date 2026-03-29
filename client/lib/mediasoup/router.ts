@@ -10,23 +10,27 @@ const mediaCodecs: mediasoup.types.RtpCodecCapability[] = [
     mimeType: 'audio/opus',
     clockRate: 48000,
     channels: 2,
+    preferredPayloadType: 111,
   },
   {
     kind: 'video',
     mimeType: 'video/VP8',
     clockRate: 90000,
+    preferredPayloadType: 96,
     parameters: {},
   },
   {
     kind: 'video',
     mimeType: 'video/VP9',
     clockRate: 90000,
+    preferredPayloadType: 98,
     parameters: { 'profile-id': 2 },
   },
   {
     kind: 'video',
     mimeType: 'video/h264',
     clockRate: 90000,
+    preferredPayloadType: 100,
     parameters: {
       'packetization-mode': 1,
       'profile-level-id': '4d0032',
