@@ -60,7 +60,7 @@ app.prepare().then(async () => {
 
     io.use(async (socket, nextAuth) => {
       try {
-        const cookieHeader = socket.handshake.headers.cookie || ''
+s        const cookieHeader = socket.handshake.headers.cookie || ''
         const reqLike = {
           headers: {
             cookie: cookieHeader,
