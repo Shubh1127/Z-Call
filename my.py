@@ -1,22 +1,50 @@
-import pandas as pd
-import numpy as np
+import matplotlib.pyplot as plt
 
-# Step 1: Create a messy dataset
-data = {
-    'Name': ['Mansi', 'Riya', 'Rahul', 'Aman', 'Riya', 'Neha'],
-    'Age': [27, np.nan, 30, 29, np.nan, 'twenty six'],
-    'Salary': [4500, 45000, np.nan, 52000, 45000, 47000],
-    'Department': ['HR', 'hr', 'IT', 'IT', 'hr', 'Finance'],
-    'Join_Date': ['2022-01-10', '2021-07-15', '2020-03-22', '2020-03-22', '2021-07-15', '2021/08/10']
-}
-df = pd.DataFrame(data)
+def line_bres(xa, ya, xb, yb):
+    pts = []
 
-# Step 2: Check dataset information
-print("Initial Dataset:")
-print(df)
+    dx = abs(xb - xa)
+    dy = abs(yb - ya) 
 
-print("\nDataset Info:")
-print(df.info())
+    step_x = 1 if xb > xa else -1
+    step_y = 1 if yb > ya else -1
 
-print("\nStatistical Summary:")
-print(df.describe(include='all'))
+    error = dx - dy
+
+    while True:
+        pts.append((xa, ya))
+
+        if xa == xb and ya == yb:
+            break
+
+        temp = 2 * error
+
+        if temp > -dy:
+            error -= dy
+            xa += step_x
+
+        if temp < dx:
+            error += dx
+            ya += step_y
+
+    return pts
+
+
+def plot_line(xa, ya, xb, yb):
+    result = line_bres(xa, ya, xb, yb)
+
+    x = [i[0] for i in result]
+    y = [i[1] for i in result]
+
+    plt.scatter(x, y, color="black")
+    plt.plot(x, y, color="green")
+
+    plt.axis("equal")
+    plt.grid(True)
+    plt.show()
+
+
+plot_line(1, 2, 9, 6)
+print("Done by Shubham")
+
+

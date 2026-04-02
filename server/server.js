@@ -31,7 +31,7 @@ const startServer=async()=>{
         
         await initDB();
     }catch(e){
-        console.log(`❌ Error starting the server ${e}`)
+        console.log(`Error starting the server ${e}`)
     }
 }
 startServer();
