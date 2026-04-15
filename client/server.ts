@@ -72,7 +72,7 @@ app.prepare().then(async () => {
           secret: process.env.NEXTAUTH_SECRET,
         })
 
-        // Fallback across cookie names used by NextAuth in dev/prod/proxy setups.
+        // Fallback across cookie names used by NextAuth in dev/prod/proxy 
         const tokenWithDefaultCookie =
           token ||
           (await getToken({
